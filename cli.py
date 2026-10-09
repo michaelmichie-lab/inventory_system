@@ -1,108 +1,171 @@
-import argparse
 import requests
 
-BASE_URL = "http://127.0.0.1:5000/inventory"
+BASE_URL = "http://127.0.0.1:5000"
+
+
+def print_menu():
+    print("\n   INVENTORY MANAGEMENT SYSTEM")
+    print("================================")
+    print("1. View inventory")
+    print("2. Add product")
+    print("3. Update product")
+    print("4. Delete product")
+    print("5. Search/import OpenFoodFacts")
+    print("6. Exit")
 
 
 def view_inventory():
-  response = requests.get(BASE_URL)
-  if response.status_code == 200:
-    items = response.json()
-    print("\n--- Current Inventory ---")
-    for item in items:
-      print(
-          f"ID: {item['id']} | Name: {item['product_name']} | Brand:"
-          f" {item['brands']} | Qty: {item['quantity']} | Price:"
-          f" ${item['price']}"
-      )
-  else:
-    print("Failed to fetch inventory.")
+    try:
+        res = requests.get(f"{BASE_URL}/inventory")
+        if res.status_code == 200:
+            items = res.json()
+            if not items:
+                print("\nInventory is currently empty.")
+                return
+            print("\n--- CURRENT INVENTORY ---")
+            for item in items:
+                print(
+                    f"ID: {item['id']} | Name: {item['product_name']} | "
+                    f"Brand: {item['brands']} | Qty: {item['quantity']} | Price: ${item['price']}"
+                )
+        else:
+            print(f"Error fetching inventory: {res.status_code}")
+    except requests.exceptions.ConnectionError:
+        print("\nError: Could not connect to Flask server. Make sure app.py is running!")
 
 
-def add_item(name=None, barcode=None, quantity=10, price=1.99):
-  payload = {
-      "product_name": name,
-      "barcode": barcode,
-      "quantity": quantity,
-      "price": price,
-  }
-  response = requests.post(BASE_URL, json=payload)
-  if response.status_code == 201:
-    print("Item added successfully:", response.json())
-  else:
-    print("Error adding item:", response.text)
+def add_product():
+    print("\n--- ADD PRODUCT ---")
+    barcode = input("Barcode (optional): ").strip()
+    product_name = input("Product Name (optional): ").strip()
+    brands = input("Brand (optional): ").strip()
+    quantity_input = input("Quantity (default 10): ").strip()
+    price_input = input("Price (default 1.99): ").strip()
+    ingredients = input("Ingredients (optional): ").strip()
+
+    payload = {}
+    if barcode:
+        payload["barcode"] = barcode
+    if product_name:
+        payload["product_name"] = product_name
+    if brands:
+        payload["brands"] = brands
+    if quantity_input:
+        try:
+            payload["quantity"] = int(quantity_input)
+        except ValueError:
+            print("Invalid quantity. Using default.")
+    if price_input:
+        try:
+            payload["price"] = float(price_input)
+        except ValueError:
+            print("Invalid price. Using default.")
+    if ingredients:
+        payload["ingredients_text"] = ingredients
+
+    res = requests.post(f"{BASE_URL}/inventory", json=payload)
+    if res.status_code in [200, 201]:
+        print("Product added successfully!")
+        print(res.json())
+    else:
+        print("Failed to add product:", res.json())
 
 
-def update_item(item_id, quantity=None, price=None):
-  payload = {}
-  if quantity is not None:
-    payload["quantity"] = quantity
-  if price is not None:
-    payload["price"] = price
+def update_product():
+    print("\n--- UPDATE PRODUCT ---")
+    item_id = input("Enter Product ID to update: ").strip()
+    if not item_id.isdigit():
+        print("Invalid ID.")
+        return
 
-  response = requests.patch(f"{BASE_URL}/{item_id}", json=payload)
-  if response.status_code == 200:
-    print("Item updated successfully:", response.json())
-  else:
-    print("Error updating item:", response.text)
+    print("Leave blank for any field you do not want to change:")
+    product_name = input("New Product Name: ").strip()
+    brands = input("New Brand: ").strip()
+    quantity_input = input("New Quantity: ").strip()
+    price_input = input("New Price: ").strip()
+    ingredients = input("New Ingredients: ").strip()
+
+    payload = {}
+    if product_name:
+        payload["product_name"] = product_name
+    if brands:
+        payload["brands"] = brands
+    if quantity_input:
+        try:
+            payload["quantity"] = int(quantity_input)
+        except ValueError:
+            print("Invalid quantity format.")
+    if price_input:
+        try:
+            payload["price"] = float(price_input)
+        except ValueError:
+            print("Invalid price format.")
+    if ingredients:
+        payload["ingredients_text"] = ingredients
+
+    res = requests.patch(f"{BASE_URL}/inventory/{item_id}", json=payload)
+    if res.status_code == 200:
+        print("Product updated successfully!")
+        print(res.json())
+    else:
+        print("Failed to update product:", res.json())
 
 
-def delete_item(item_id):
-  response = requests.delete(f"{BASE_URL}/{item_id}")
-  if response.status_code == 200:
-    print(response.json()["message"])
-  else:
-    print("Error deleting item:", response.text)
+def delete_product():
+    print("\n--- DELETE PRODUCT ---")
+    item_id = input("Enter Product ID to delete: ").strip()
+    if not item_id.isdigit():
+        print("Invalid ID.")
+        return
+
+    res = requests.delete(f"{BASE_URL}/inventory/{item_id}")
+    if res.status_code == 200:
+        print(f"Product {item_id} deleted successfully.")
+    else:
+        print("Failed to delete product:", res.json())
 
 
-def search_api(query):
-  url = f"https://world.openfoodfacts.org/api/v0/product/{query}.json"
-  res = requests.get(url)
-  if res.status_code == 200 and res.json().get("status") == 1:
-    prod = res.json()["product"]
-    print(f"\n[OpenFoodFacts Found]: {prod.get('product_name')}")
-    print(f"Brand: {prod.get('brands')}")
-    print(f"Ingredients: {prod.get('ingredients_text', 'N/A')}")
-  else:
-    print("Product not found on external API.")
+def search_open_food_facts():
+    print("\n--- SEARCH / IMPORT OPENFOODFACTS ---")
+    query = input("Enter Barcode or Product Search Term: ").strip()
+    if not query:
+        print("Search term cannot be empty.")
+        return
+
+    res = requests.post(f"{BASE_URL}/inventory", json={"query": query})
+    if res.status_code in [200, 201]:
+        item = res.json()
+        print("\nProduct imported into inventory:")
+        print(f"ID: {item['id']}")
+        print(f"Name: {item['product_name']}")
+        print(f"Brand: {item['brands']}")
+        print(f"Barcode: {item['barcode']}")
+        print(f"Ingredients: {item['ingredients_text']}")
+    else:
+        print("Product not found or import failed.")
+
+
+def main():
+    while True:
+        print_menu()
+        choice = input("Choose an option: ").strip()
+
+        if choice == "1":
+            view_inventory()
+        elif choice == "2":
+            add_product()
+        elif choice == "3":
+            update_product()
+        elif choice == "4":
+            delete_product()
+        elif choice == "5":
+            search_open_food_facts()
+        elif choice == "6":
+            print("\nExiting program. Goodbye!")
+            break
+        else:
+            print("Invalid option. Please enter a number between 1 and 6.")
 
 
 if __name__ == "__main__":
-  parser = argparse.ArgumentParser(description="Inventory CLI Frontend")
-  subparsers = parser.add_subparsers(dest="command")
-
-  subparsers.add_parser("view", help="View all inventory items")
-
-  add_p = subparsers.add_parser("add", help="Add new inventory item")
-  add_p.add_argument("--name", help="Product Name")
-  add_p.add_argument("--barcode", help="Product Barcode")
-  add_p.add_argument("--qty", type=int, default=10, help="Quantity")
-  add_p.add_argument("--price", type=float, default=1.99, help="Price")
-
-  up_p = subparsers.add_parser("update", help="Update quantity or price")
-  up_p.add_argument("id", type=int, help="Item ID")
-  up_p.add_argument("--qty", type=int, help="New Quantity")
-  up_p.add_argument("--price", type=float, help="New Price")
-
-  del_p = subparsers.add_parser("delete", help="Delete item by ID")
-  del_p.add_argument("id", type=int, help="Item ID")
-
-  search_p = subparsers.add_parser(
-      "search-api", help="Search OpenFoodFacts by barcode"
-  )
-  search_p.add_argument("query", help="Barcode or search term")
-
-  args = parser.parse_args()
-
-  if args.command == "view":
-    view_inventory()
-  elif args.command == "add":
-    add_item(args.name, args.barcode, args.qty, args.price)
-  elif args.command == "update":
-    update_item(args.id, args.qty, args.price)
-  elif args.command == "delete":
-    delete_item(args.id)
-  elif args.command == "search-api":
-    search_api(args.query)
-  else:
-    parser.print_help()
+    main()
